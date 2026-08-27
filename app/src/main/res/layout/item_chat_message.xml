@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/layout_message_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="8dp"
+    android:orientation="vertical">
+
+    <!-- Role Title Badge -->
+    <TextView
+        android:id="@+id/tv_message_role"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="2dp"
+        android:text="Assistant"
+        android:textColor="@color/text_secondary"
+        android:textSize="10sp"
+        android:textStyle="bold" />
+
+    <!-- Message Bubble -->
+    <LinearLayout
+        android:id="@+id/layout_message_bubble"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_message_assistant"
+        android:maxWidth="320dp"
+        android:padding="12dp">
+
+        <TextView
+            android:id="@+id/tv_message_content"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Hello, how can I help you code today?"
+            android:textColor="@color/text_primary"
+            android:textIsSelectable="true"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+</LinearLayout>

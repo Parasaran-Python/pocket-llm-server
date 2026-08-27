@@ -1,5 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Core Theme Palette -->
+    <color name="bg_dark">#0D1117</color>
+    <color name="bg_surface">#161B22</color>
+    <color name="bg_card">#21262D</color>
+    <color name="bg_card_secondary">#30363D</color>
+
+    <!-- Accent Colors -->
+    <color name="primary_cyan">#00E5FF</color>
+    <color name="primary_cyan_dark">#00B0FF</color>
+    <color name="accent_purple">#7C4DFF</color>
+    <color name="accent_green">#00E676</color>
+    <color name="accent_orange">#FF9100</color>
+    <color name="accent_red">#FF5252</color>
+
+    <!-- Text Colors -->
+    <color name="text_primary">#F0F6FC</color>
+    <color name="text_secondary">#8B949E</color>
+    <color name="text_muted">#6E7681</color>
+    <color name="text_code">#79C0FF</color>
+
+    <!-- Code Block / Badges -->
+    <color name="code_bg">#090D13</color>
+    <color name="gpu_badge_bg">#1F3A2E</color>
+    <color name="gpu_badge_text">#00E676</color>
+    <color name="cpu_badge_bg">#3D2A14</color>
+    <color name="cpu_badge_text">#FFB74D</color>
+
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>
