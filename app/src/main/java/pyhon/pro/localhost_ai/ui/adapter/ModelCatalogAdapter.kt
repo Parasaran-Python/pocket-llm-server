@@ -51,10 +51,10 @@ class ModelCatalogAdapter(
         if (isThisDownloading) {
             val state = currentDownloadState as DownloadState.Downloading
             binding.layoutDownloadProgress.visibility = View.VISIBLE
-            binding.progressDownload.progress = state.progressPercent
             val downloadedMb = state.downloadedBytes / (1024 * 1024)
             val totalMb = state.totalBytes / (1024 * 1024)
-            binding.tvDownloadStatus.text = "Downloading: $downloadedMb MB / $totalMb MB (${state.progressPercent}%) • %.1f MB/s".format(state.speedMbPerSec)
+            val speedStr = String.format(java.util.Locale.US, "%.1f", state.speedMbPerSec)
+            binding.tvDownloadStatus.text = "Downloading: $downloadedMb MB / $totalMb MB (${state.progressPercent}%) • $speedStr MB/s"
             binding.btnCatalogAction.visibility = View.GONE
             binding.btnCancelDownload.setOnClickListener { onCancelClick(model) }
         } else {

@@ -92,7 +92,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:indicatorColor="@color/primary_cyan"
-                app:trackColor="@color/bg_card_secondary" />
+                app:trackColor="@color/bg_card_secondary"
+                app:trackCornerRadius="4dp"
+                app:trackThickness="6dp" />
 
             <RelativeLayout
                 android:layout_width="match_parent"
