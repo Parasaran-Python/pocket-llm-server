@@ -1,6 +1,8 @@
 package pyhon.pro.localhost_ai.server
-
+ 
+import com.google.gson.*
 import com.google.gson.annotations.SerializedName
+import java.lang.reflect.Type
 
 // Chat Message
 data class ChatMessage(
@@ -17,6 +19,46 @@ data class ChatMessage(
     val name: String? = null
 )
 
+class ChatMessageDeserializer : JsonDeserializer<ChatMessage> {
+    override fun deserialize(
+        json: JsonElement,
+        typeOfT: Type,
+        context: JsonDeserializationContext
+    ): ChatMessage {
+        val obj = json.asJsonObject
+        val role = obj.get("role")?.asString ?: "user"
+        val reasoningContent = obj.get("reasoning_content")?.asString
+        val name = obj.get("name")?.asString
+
+        val contentElem = obj.get("content")
+        val contentStr = when {
+            contentElem == null || contentElem.isJsonNull -> ""
+            contentElem.isJsonPrimitive -> contentElem.asString
+            contentElem.isJsonArray -> {
+                contentElem.asJsonArray.mapNotNull { item ->
+                    when {
+                        item.isJsonPrimitive -> item.asString
+                        item.isJsonObject -> {
+                            val itemObj = item.asJsonObject
+                            itemObj.get("text")?.asString
+                                ?: itemObj.get("content")?.asString
+                        }
+                        else -> null
+                    }
+                }.joinToString("\n")
+            }
+            else -> contentElem.toString()
+        }
+
+        return ChatMessage(
+            role = role,
+            content = contentStr,
+            reasoningContent = reasoningContent,
+            name = name
+        )
+    }
+}
+
 // Chat Completion Request
 data class ChatCompletionRequest(
     @SerializedName("model")
@@ -32,7 +74,10 @@ data class ChatCompletionRequest(
     val topP: Float = 0.9f,
 
     @SerializedName("max_tokens")
-    val maxTokens: Int = 2048,
+    val maxTokens: Int? = null,
+
+    @SerializedName("max_completion_tokens")
+    val maxCompletionTokens: Int? = null,
 
     @SerializedName("stream")
     val stream: Boolean = false,
@@ -40,6 +85,9 @@ data class ChatCompletionRequest(
     @SerializedName("stop")
     val stop: Any? = null // String or List<String>
 ) {
+    val effectiveMaxTokens: Int
+        get() = maxTokens ?: maxCompletionTokens ?: 2048
+
     fun getStopSequences(): List<String> {
         return when (stop) {
             is String -> listOf(stop)

@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.SystemClock
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import com.google.gson.JsonSyntaxException
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +28,9 @@ class OpenAiServer(
     port: Int = 8080
 ) : NanoHTTPD(port) {
 
-    private val gson = Gson()
+    private val gson = GsonBuilder()
+        .registerTypeAdapter(ChatMessage::class.java, ChatMessageDeserializer())
+        .create()
     private val serverStartTime = System.currentTimeMillis()
     private val serverScope = CoroutineScope(Dispatchers.IO)
 
@@ -270,7 +273,7 @@ class OpenAiServer(
 
                 val resultJson = LocalAiEngine.generateComplete(
                     prompt = prompt,
-                    maxTokens = request.maxTokens,
+                    maxTokens = request.effectiveMaxTokens,
                     temperature = request.temperature,
                     topP = request.topP,
                     stopWords = request.getStopSequences()
@@ -339,7 +342,7 @@ class OpenAiServer(
     ): Response {
         val (text, stats) = runBlockingWithStats(
             prompt = prompt,
-            maxTokens = request.maxTokens,
+            maxTokens = request.effectiveMaxTokens,
             temperature = request.temperature,
             topP = request.topP,
             stopWords = request.getStopSequences()
@@ -486,8 +489,23 @@ class OpenAiServer(
 
     private fun parseRequestBody(session: IHTTPSession): String {
         val map = HashMap<String, String>()
-        session.parseBody(map)
-        return map["postData"] ?: ""
+        try {
+            session.parseBody(map)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse body in session", e)
+        }
+        val postData = map["postData"]
+        if (!postData.isNullOrBlank()) {
+            return postData
+        }
+        val contentFilePath = map["content"]
+        if (!contentFilePath.isNullOrBlank()) {
+            val file = File(contentFilePath)
+            if (file.exists()) {
+                return file.readText(StandardCharsets.UTF_8)
+            }
+        }
+        return ""
     }
 
     private fun createJsonResponse(status: Response.IStatus, json: String): Response {
