@@ -17,14 +17,48 @@ if(DEFINED ANDROID_ABI)
         set(GGML_SYSTEM_ARCH "ARM")
         set(GGML_CPU_KLEIDIAI ON)
         set(GGML_OPENMP ON)
+        set(GGML_VULKAN ON CACHE BOOL "" FORCE)
     elseif(ANDROID_ABI STREQUAL "x86_64")
         set(GGML_SYSTEM_ARCH "x86")
         set(GGML_CPU_KLEIDIAI OFF)
         set(GGML_OPENMP OFF)
+        set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
     else()
         message(FATAL_ERROR "Unsupported ABI: ${ANDROID_ABI}")
     endif()
 endif()
+
+# Locate glslc from Android NDK
+if(DEFINED ANDROID_NDK AND NOT DEFINED Vulkan_GLSLC_EXECUTABLE)
+    if(EXISTS "${ANDROID_NDK}/shader-tools/linux-x86_64/glslc")
+        set(Vulkan_GLSLC_EXECUTABLE "${ANDROID_NDK}/shader-tools/linux-x86_64/glslc" CACHE FILEPATH "glslc executable" FORCE)
+    endif()
+endif()
+
+include(FetchContent)
+
+# Fetch Vulkan-Headers and SPIRV-Headers for Vulkan C++ compilation
+FetchContent_Declare(
+    vulkan_headers
+    GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Headers.git
+    GIT_TAG        v1.3.296
+)
+
+FetchContent_Declare(
+    spirv_headers
+    GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers.git
+    GIT_TAG        vulkan-sdk-1.3.296.0
+)
+
+FetchContent_MakeAvailable(vulkan_headers spirv_headers)
+
+export(TARGETS SPIRV-Headers NAMESPACE SPIRV-Headers:: FILE "${CMAKE_CURRENT_BINARY_DIR}/SPIRV-HeadersConfig.cmake")
+set(SPIRV-Headers_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE PATH "" FORCE)
+
+include_directories(SYSTEM
+    ${vulkan_headers_SOURCE_DIR}/include
+    ${spirv_headers_SOURCE_DIR}/include
+)
 
 # Options for llama.cpp & ggml
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -48,6 +82,7 @@ target_compile_definitions(localhost_ai_engine PRIVATE
     GGML_SYSTEM_ARCH=${GGML_SYSTEM_ARCH}
     GGML_CPU_KLEIDIAI=$<BOOL:${GGML_CPU_KLEIDIAI}>
     GGML_OPENMP=$<BOOL:${GGML_OPENMP}>
+    GGML_USE_VULKAN=$<BOOL:${GGML_VULKAN}>
 )
 
 target_include_directories(localhost_ai_engine PRIVATE
