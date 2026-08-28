@@ -59,7 +59,8 @@ class ModelsFragment : Fragment() {
 
     private fun setupRecyclerViews() {
         catalogAdapter = ModelCatalogAdapter(
-            models = ModelCatalog.presets,
+            models = ModelCatalog.getCatalogPresetsWithStatus(requireContext()),
+            activeModelPath = LocalAiEngine.activeModelPath.value,
             onDownloadClick = { model -> startDownload(model) },
             onCancelClick = { ModelDownloader.cancelDownload() },
             onLoadClick = { model -> loadModelIntoMemory(model.localPath ?: "") }
@@ -112,6 +113,29 @@ class ModelsFragment : Fragment() {
                     ModelCatalog.getInstalledModels(requireContext()),
                     LocalAiEngine.activeModelPath.value
                 )
+                catalogAdapter.updateModels(
+                    ModelCatalog.getCatalogPresetsWithStatus(requireContext()),
+                    LocalAiEngine.activeModelPath.value
+                )
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            kotlinx.coroutines.flow.combine(
+                LocalAiEngine.isLoading,
+                LocalAiEngine.loadingProgress,
+                LocalAiEngine.loadingModelName
+            ) { isLoading, progress, modelName ->
+                Triple(isLoading, progress, modelName)
+            }.collect { (isLoading, progress, modelName) ->
+                if (isLoading) {
+                    binding.layoutModelLoadingProgress.visibility = View.VISIBLE
+                    binding.progressModelLoad.progress = progress
+                    binding.tvModelLoadStatus.text = "Loading ${modelName ?: "model"} into GPU VRAM ($progress%)..."
+                    binding.btnUnloadModel.visibility = View.GONE
+                } else {
+                    binding.layoutModelLoadingProgress.visibility = View.GONE
+                }
             }
         }
     }
@@ -142,7 +166,10 @@ class ModelsFragment : Fragment() {
             binding.rvInstalledModels.visibility = View.VISIBLE
         }
 
-        catalogAdapter.updateModels(ModelCatalog.presets)
+        catalogAdapter.updateModels(
+            ModelCatalog.getCatalogPresetsWithStatus(requireContext()),
+            LocalAiEngine.activeModelPath.value
+        )
     }
 
     private fun startDownload(model: ModelInfo) {

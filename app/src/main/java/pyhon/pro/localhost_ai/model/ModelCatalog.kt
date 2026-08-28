@@ -103,6 +103,25 @@ object ModelCatalog {
         return dir
     }
 
+    fun getCatalogPresetsWithStatus(context: Context): List<ModelInfo> {
+        val modelsDir = getModelsDirectory(context)
+        return presets.map { preset ->
+            val file = File(modelsDir, preset.filename)
+            if (file.exists() && file.length() > 0) {
+                preset.copy(
+                    localPath = file.absolutePath,
+                    isDownloaded = true,
+                    sizeBytes = file.length()
+                )
+            } else {
+                preset.copy(
+                    localPath = null,
+                    isDownloaded = false
+                )
+            }
+        }
+    }
+
     fun getInstalledModels(context: Context): List<ModelInfo> {
         val modelsDir = getModelsDirectory(context)
         val installedList = mutableListOf<ModelInfo>()

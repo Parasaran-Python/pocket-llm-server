@@ -92,11 +92,22 @@ object ModelDownloader {
                 ?: return@withContext Result.failure(RuntimeException("Response body is null"))
 
             val contentLength = body.contentLength()
-            val totalBytes = if (response.code == 206) {
+            val rawTotalBytes = if (response.code == 206) {
                 downloadedBytes + contentLength
             } else {
                 contentLength
             }
+            val effectiveTotalBytes = if (rawTotalBytes > 0) rawTotalBytes else modelInfo.sizeBytes
+
+            // Emit initial downloading state immediately
+            val initialPercent = if (effectiveTotalBytes > 0) ((downloadedBytes * 100) / effectiveTotalBytes).toInt() else 0
+            _downloadState.value = DownloadState.Downloading(
+                modelId = modelInfo.id,
+                progressPercent = initialPercent,
+                downloadedBytes = downloadedBytes,
+                totalBytes = effectiveTotalBytes,
+                speedMbPerSec = 0.0
+            )
 
             val inputStream: InputStream = body.byteStream()
             val outputStream = FileOutputStream(tempFile, downloadedBytes > 0)
@@ -121,15 +132,15 @@ object ModelDownloader {
 
                 val now = System.currentTimeMillis()
                 val timeDiff = now - lastUpdateTime
-                if (timeDiff >= 500) { // update UI every 500ms
+                if (timeDiff >= 300) { // update UI every 300ms for smooth progress
                     val speedMbPerSec = (bytesSinceLastUpdate.toDouble() / (1024.0 * 1024.0)) / (timeDiff.toDouble() / 1000.0)
-                    val percent = if (totalBytes > 0) ((downloadedBytes * 100) / totalBytes).toInt() else 0
+                    val percent = if (effectiveTotalBytes > 0) ((downloadedBytes * 100) / effectiveTotalBytes).toInt().coerceIn(0, 100) else 0
 
                     _downloadState.value = DownloadState.Downloading(
                         modelId = modelInfo.id,
                         progressPercent = percent,
                         downloadedBytes = downloadedBytes,
-                        totalBytes = totalBytes,
+                        totalBytes = effectiveTotalBytes,
                         speedMbPerSec = speedMbPerSec
                     )
 

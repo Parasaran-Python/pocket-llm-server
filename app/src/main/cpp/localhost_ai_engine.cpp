@@ -124,6 +124,47 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeGetAvailableBackends(
     return array;
 }
 
+JNIEXPORT jstring JNICALL
+Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeGetGpuDeviceName(
+        JNIEnv *env,
+        jobject /*thiz*/
+) {
+    size_t count = ggml_backend_dev_count();
+    for (size_t i = 0; i < count; ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        if (dev) {
+            auto type = ggml_backend_dev_type(dev);
+            if (type == GGML_BACKEND_DEVICE_TYPE_GPU) {
+                const char *desc = ggml_backend_dev_description(dev);
+                if (desc && strlen(desc) > 0) {
+                    return env->NewStringUTF(desc);
+                }
+                const char *name = ggml_backend_dev_name(dev);
+                if (name && strlen(name) > 0) {
+                    return env->NewStringUTF(name);
+                }
+            }
+        }
+    }
+    return env->NewStringUTF("");
+}
+
+struct LoadProgressContext {
+    JNIEnv *env;
+    jobject callback;
+    jmethodID methodId;
+};
+
+static bool model_load_progress_cb(float progress, void *user_data) {
+    if (!user_data) return true;
+    auto *ctx = static_cast<LoadProgressContext *>(user_data);
+    if (ctx->env && ctx->callback && ctx->methodId) {
+        int percent = static_cast<int>(progress * 100.0f);
+        ctx->env->CallVoidMethod(ctx->callback, ctx->methodId, (jint)percent);
+    }
+    return true;
+}
+
 JNIEXPORT jint JNICALL
 Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeLoadModel(
         JNIEnv *env,
@@ -131,7 +172,8 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeLoadModel(
         jstring jmodelPath,
         jint nGpuLayers,
         jint nCtx,
-        jint nThreads
+        jint nThreads,
+        jobject jcallback
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
 
@@ -154,6 +196,19 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeLoadModel(
     // Model parameters
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = nGpuLayers;
+
+    LoadProgressContext progress_ctx{};
+    if (jcallback != nullptr) {
+        jclass callbackClass = env->GetObjectClass(jcallback);
+        jmethodID onProgressMethod = env->GetMethodID(callbackClass, "onProgress", "(I)V");
+        if (onProgressMethod) {
+            progress_ctx.env = env;
+            progress_ctx.callback = jcallback;
+            progress_ctx.methodId = onProgressMethod;
+            model_params.progress_callback = model_load_progress_cb;
+            model_params.progress_callback_user_data = &progress_ctx;
+        }
+    }
 
     auto *model = llama_model_load_from_file(model_path, model_params);
 

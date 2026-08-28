@@ -31,6 +31,15 @@ object LocalAiEngine {
     private val _activeModelName = MutableStateFlow<String?>(null)
     val activeModelName: StateFlow<String?> = _activeModelName.asStateFlow()
 
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _loadingProgress = MutableStateFlow(0)
+    val loadingProgress: StateFlow<Int> = _loadingProgress.asStateFlow()
+
+    private val _loadingModelName = MutableStateFlow<String?>(null)
+    val loadingModelName: StateFlow<String?> = _loadingModelName.asStateFlow()
+
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
 
@@ -59,13 +68,25 @@ object LocalAiEngine {
 
             val backends = getAvailableBackends()
             Log.i(TAG, "Detected available GGML backends: ${backends.joinToString(", ")}")
+            val gpuDeviceName = getGpuDeviceName()
             if (backends.any { it.contains("Vulkan", ignoreCase = true) }) {
-                _activeBackend.value = "GPU (Vulkan Adreno)"
+                _activeBackend.value = if (gpuDeviceName.isNotBlank()) "GPU (Vulkan - $gpuDeviceName)" else "GPU (Vulkan)"
             } else {
                 _activeBackend.value = "CPU (ARM NEON / KleidiAI)"
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing LocalAiEngine", e)
+        }
+    }
+
+    /**
+     * Returns dynamic GPU device name reported by Vulkan driver.
+     */
+    fun getGpuDeviceName(): String {
+        return try {
+            nativeGetGpuDeviceName().trim()
+        } catch (e: Exception) {
+            ""
         }
     }
 
@@ -111,15 +132,29 @@ object LocalAiEngine {
         }
 
         try {
+            _isLoading.value = true
+            _loadingProgress.value = 0
+            _loadingModelName.value = file.nameWithoutExtension
+
+            val callback = object : ModelLoadProgressCallback {
+                override fun onProgress(progressPercent: Int) {
+                    _loadingProgress.value = progressPercent.coerceIn(0, 100)
+                }
+            }
+
             Log.i(TAG, "Loading model: ${file.name} (GPU Layers: $nGpuLayers, Ctx: $nCtx, Threads: $nThreads)")
-            val ret = nativeLoadModel(modelPath, nGpuLayers, nCtx, nThreads)
+            val ret = nativeLoadModel(modelPath, nGpuLayers, nCtx, nThreads, callback)
             if (ret == 0) {
                 _isLoaded.value = true
                 _activeModelPath.value = modelPath
                 _activeModelName.value = file.nameWithoutExtension
+                _loadingProgress.value = 100
 
-                if (nGpuLayers > 0) {
-                    _activeBackend.value = "GPU (Vulkan Adreno 740)"
+                val gpuDeviceName = getGpuDeviceName()
+                if (nGpuLayers > 0 && gpuDeviceName.isNotBlank()) {
+                    _activeBackend.value = "GPU (Vulkan - $gpuDeviceName)"
+                } else if (nGpuLayers > 0) {
+                    _activeBackend.value = "GPU (Vulkan)"
                 } else {
                     _activeBackend.value = "CPU (ARM KleidiAI / NEON)"
                 }
@@ -139,6 +174,8 @@ object LocalAiEngine {
             _activeModelName.value = null
             Log.e(TAG, "Exception during model loading", e)
             Result.failure(e)
+        } finally {
+            _isLoading.value = false
         }
     }
 
@@ -302,7 +339,14 @@ object LocalAiEngine {
     private external fun nativeInit(nativeLibDir: String?)
     private external fun nativeGetSystemInfo(): String
     private external fun nativeGetAvailableBackends(): Array<String>
-    private external fun nativeLoadModel(modelPath: String, nGpuLayers: Int, nCtx: Int, nThreads: Int): Int
+    private external fun nativeGetGpuDeviceName(): String
+    private external fun nativeLoadModel(
+        modelPath: String,
+        nGpuLayers: Int,
+        nCtx: Int,
+        nThreads: Int,
+        callback: ModelLoadProgressCallback?
+    ): Int
     private external fun nativeUnloadModel()
     private external fun nativeIsModelLoaded(): Boolean
     private external fun nativeGetModelMetadata(): String
@@ -316,4 +360,8 @@ object LocalAiEngine {
         callback: TokenCallback?
     ): String
     private external fun nativeCancelGeneration()
+}
+
+interface ModelLoadProgressCallback {
+    fun onProgress(progressPercent: Int)
 }

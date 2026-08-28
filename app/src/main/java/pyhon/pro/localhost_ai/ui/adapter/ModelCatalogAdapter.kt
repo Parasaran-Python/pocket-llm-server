@@ -10,6 +10,7 @@ import pyhon.pro.localhost_ai.model.ModelInfo
 
 class ModelCatalogAdapter(
     private var models: List<ModelInfo>,
+    private var activeModelPath: String? = null,
     private val onDownloadClick: (ModelInfo) -> Unit,
     private val onCancelClick: (ModelInfo) -> Unit,
     private val onLoadClick: (ModelInfo) -> Unit
@@ -17,13 +18,22 @@ class ModelCatalogAdapter(
 
     private var currentDownloadState: DownloadState = DownloadState.Idle
 
-    fun updateModels(newModels: List<ModelInfo>) {
+    fun updateModels(newModels: List<ModelInfo>, activePath: String? = activeModelPath) {
         models = newModels
+        activeModelPath = activePath
         notifyDataSetChanged()
     }
 
     fun updateDownloadState(state: DownloadState) {
         currentDownloadState = state
+
+        if (state is DownloadState.Downloading) {
+            val index = models.indexOfFirst { it.id == state.modelId }
+            if (index != -1) {
+                notifyItemChanged(index, state)
+                return
+            }
+        }
         notifyDataSetChanged()
     }
 
@@ -35,6 +45,35 @@ class ModelCatalogAdapter(
     }
 
     override fun getItemCount(): Int = models.size
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isNotEmpty()) {
+            val payload = payloads.first()
+            if (payload is DownloadState.Downloading && payload.modelId == models[position].id) {
+                bindProgress(holder.binding, payload, models[position])
+                return
+            }
+        }
+        super.onBindViewHolder(holder, position, payloads)
+    }
+
+    private fun bindProgress(binding: ItemModelCatalogBinding, state: DownloadState.Downloading, model: ModelInfo) {
+        binding.layoutDownloadProgress.visibility = View.VISIBLE
+        binding.btnCatalogAction.visibility = View.GONE
+        binding.progressDownload.isIndeterminate = false
+        binding.progressDownload.progress = state.progressPercent.coerceIn(0, 100)
+
+        val downloadedMb = state.downloadedBytes / (1024 * 1024)
+        val totalMb = state.totalBytes / (1024 * 1024)
+        val speedStr = String.format(java.util.Locale.US, "%.1f", state.speedMbPerSec)
+
+        if (totalMb > 0) {
+            binding.tvDownloadStatus.text = "Downloading: $downloadedMb MB / $totalMb MB (${state.progressPercent}%) • $speedStr MB/s"
+        } else {
+            binding.tvDownloadStatus.text = "Downloading: $downloadedMb MB • $speedStr MB/s"
+        }
+        binding.btnCancelDownload.setOnClickListener { onCancelClick(model) }
+    }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val model = models[position]
@@ -49,23 +88,26 @@ class ModelCatalogAdapter(
                 (currentDownloadState as DownloadState.Downloading).modelId == model.id
 
         if (isThisDownloading) {
-            val state = currentDownloadState as DownloadState.Downloading
-            binding.layoutDownloadProgress.visibility = View.VISIBLE
-            val downloadedMb = state.downloadedBytes / (1024 * 1024)
-            val totalMb = state.totalBytes / (1024 * 1024)
-            val speedStr = String.format(java.util.Locale.US, "%.1f", state.speedMbPerSec)
-            binding.tvDownloadStatus.text = "Downloading: $downloadedMb MB / $totalMb MB (${state.progressPercent}%) • $speedStr MB/s"
-            binding.btnCatalogAction.visibility = View.GONE
-            binding.btnCancelDownload.setOnClickListener { onCancelClick(model) }
+            bindProgress(binding, currentDownloadState as DownloadState.Downloading, model)
         } else {
             binding.layoutDownloadProgress.visibility = View.GONE
             binding.btnCatalogAction.visibility = View.VISIBLE
 
-            if (model.existsLocally()) {
-                binding.btnCatalogAction.text = "Load Model"
-                binding.btnCatalogAction.setOnClickListener { onLoadClick(model) }
+            val isDownloaded = model.existsLocally()
+            val isActive = isDownloaded && activeModelPath != null && model.localPath == activeModelPath
+
+            if (isDownloaded) {
+                if (isActive) {
+                    binding.btnCatalogAction.text = "Active"
+                    binding.btnCatalogAction.isEnabled = false
+                } else {
+                    binding.btnCatalogAction.text = "Load Model"
+                    binding.btnCatalogAction.isEnabled = true
+                    binding.btnCatalogAction.setOnClickListener { onLoadClick(model) }
+                }
             } else {
                 binding.btnCatalogAction.text = "Download"
+                binding.btnCatalogAction.isEnabled = true
                 binding.btnCatalogAction.setOnClickListener { onDownloadClick(model) }
             }
         }
