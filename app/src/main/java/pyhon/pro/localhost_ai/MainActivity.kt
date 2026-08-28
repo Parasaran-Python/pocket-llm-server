@@ -7,8 +7,14 @@ import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import pyhon.pro.localhost_ai.databinding.ActivityMainBinding
+import pyhon.pro.localhost_ai.engine.LocalAiEngine
 import pyhon.pro.localhost_ai.ui.fragment.DashboardFragment
 import pyhon.pro.localhost_ai.ui.fragment.LogsFragment
 import pyhon.pro.localhost_ai.ui.fragment.ModelsFragment
@@ -28,11 +34,40 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        setupWindowInsets()
         requestRequiredPermissions()
         setupNavigation()
+        observeBackendStatus()
 
         if (savedInstanceState == null) {
             loadFragment(DashboardFragment())
+        }
+    }
+
+    private fun setupWindowInsets() {
+        ViewCompat.setOnApplyWindowInsetsListener(binding.mainRoot) { _, insets ->
+            val systemBars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            binding.topToolbar.updatePadding(
+                left = systemBars.left,
+                top = systemBars.top,
+                right = systemBars.right
+            )
+            binding.bottomNav.updatePadding(
+                left = systemBars.left,
+                right = systemBars.right,
+                bottom = systemBars.bottom
+            )
+            insets
+        }
+    }
+
+    private fun observeBackendStatus() {
+        lifecycleScope.launch {
+            LocalAiEngine.activeBackend.collect { backend ->
+                binding.topToolbar.subtitle = "$backend • LAN Server"
+            }
         }
     }
 

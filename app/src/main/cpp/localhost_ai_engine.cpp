@@ -437,131 +437,141 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeGenerate(
     // Prompt Processing Benchmark
     const int64_t t_prompt_start = ggml_time_us();
 
-    // Decode Prompt in batches
-    llama_pos current_pos = 0;
-    for (int i = 0; i < n_prompt; i += 512) {
-        if (g_cancel_requested) break;
-        int cur_batch_size = std::min(n_prompt - i, 512);
-        common_batch_clear(g_batch);
-        for (int j = 0; j < cur_batch_size; j++) {
-            llama_token token = prompt_tokens[i + j];
-            llama_pos pos = current_pos + j;
-            bool want_logit = (i + j == n_prompt - 1);
-            common_batch_add(g_batch, token, pos, {0}, want_logit);
-        }
-        if (llama_decode(g_context, g_batch) != 0) {
-            LOGE("llama_decode failed during prompt processing at position %d", current_pos);
-            common_sampler_free(sampler);
-            g_is_generating = false;
-            return env->NewStringUTF("{\"error\":\"Failed to evaluate prompt\"}");
-        }
-        current_pos += cur_batch_size;
-    }
-
-    const int64_t t_prompt_end = ggml_time_us();
-
-    // Text Generation Loop
-    int n_generated = 0;
-    int max_gen = (maxTokens > 0) ? maxTokens : (ctx_size - current_pos - 4);
-    std::string accumulated_output;
-    std::string cached_token_chars;
-
-    const int64_t t_gen_start = ggml_time_us();
-
-    while (n_generated < max_gen && current_pos < ctx_size - 4) {
-        if (g_cancel_requested) {
-            LOGI("Generation cancelled by user.");
-            break;
-        }
-
-        llama_token new_token_id = common_sampler_sample(sampler, g_context, -1);
-        common_sampler_accept(sampler, new_token_id, true);
-
-        // Check for End of Generation token
-        if (llama_vocab_is_eog(llama_model_get_vocab(g_model), new_token_id)) {
-            LOGD("EOS token reached: %d", new_token_id);
-            break;
-        }
-
-        // Decode new token into KV cache
-        common_batch_clear(g_batch);
-        common_batch_add(g_batch, new_token_id, current_pos, {0}, true);
-        if (llama_decode(g_context, g_batch) != 0) {
-            LOGE("llama_decode failed on generated token at pos %d", current_pos);
-            break;
-        }
-
-        current_pos++;
-        n_generated++;
-
-        // Convert token to text piece
-        std::string piece = common_token_to_piece(g_context, new_token_id);
-        cached_token_chars += piece;
-
-        if (is_valid_utf8(cached_token_chars.c_str())) {
-            accumulated_output += cached_token_chars;
-
-            // Check custom stop words
-            bool stop_hit = false;
-            for (const auto &stop : stops) {
-                if (!stop.empty() && accumulated_output.rfind(stop) != std::string::npos) {
-                    stop_hit = true;
-                    break;
-                }
+    try {
+        // Decode Prompt in batches
+        llama_pos current_pos = 0;
+        for (int i = 0; i < n_prompt; i += 512) {
+            if (g_cancel_requested) break;
+            int cur_batch_size = std::min(n_prompt - i, 512);
+            common_batch_clear(g_batch);
+            for (int j = 0; j < cur_batch_size; j++) {
+                llama_token token = prompt_tokens[i + j];
+                llama_pos pos = current_pos + j;
+                bool want_logit = (i + j == n_prompt - 1);
+                common_batch_add(g_batch, token, pos, {0}, want_logit);
             }
-            if (stop_hit) {
-                LOGI("Custom stop sequence hit.");
+            if (llama_decode(g_context, g_batch) != 0) {
+                LOGE("llama_decode failed during prompt processing at position %d", current_pos);
+                common_sampler_free(sampler);
+                g_is_generating = false;
+                return env->NewStringUTF("{\"error\":\"Failed to evaluate prompt\"}");
+            }
+            current_pos += cur_batch_size;
+        }
+
+        const int64_t t_prompt_end = ggml_time_us();
+
+        // Text Generation Loop
+        int n_generated = 0;
+        int max_gen = (maxTokens > 0) ? maxTokens : (ctx_size - current_pos - 4);
+        std::string accumulated_output;
+        std::string cached_token_chars;
+
+        const int64_t t_gen_start = ggml_time_us();
+
+        while (n_generated < max_gen && current_pos < ctx_size - 4) {
+            if (g_cancel_requested) {
+                LOGI("Generation cancelled by user.");
                 break;
             }
 
-            // Stream token chunk to callback
-            if (callback != nullptr && onTokenMethod != nullptr) {
-                jstring jchunk = env->NewStringUTF(cached_token_chars.c_str());
-                jboolean cont = env->CallBooleanMethod(callback, onTokenMethod, jchunk, JNI_FALSE);
-                env->DeleteLocalRef(jchunk);
-                if (!cont) {
-                    LOGI("Callback requested stop.");
+            llama_token new_token_id = common_sampler_sample(sampler, g_context, -1);
+            common_sampler_accept(sampler, new_token_id, true);
+
+            // Check for End of Generation token
+            if (llama_vocab_is_eog(llama_model_get_vocab(g_model), new_token_id)) {
+                LOGD("EOS token reached: %d", new_token_id);
+                break;
+            }
+
+            // Decode new token into KV cache
+            common_batch_clear(g_batch);
+            common_batch_add(g_batch, new_token_id, current_pos, {0}, true);
+            if (llama_decode(g_context, g_batch) != 0) {
+                LOGE("llama_decode failed on generated token at pos %d", current_pos);
+                break;
+            }
+
+            current_pos++;
+            n_generated++;
+
+            // Convert token to text piece
+            std::string piece = common_token_to_piece(g_context, new_token_id);
+            cached_token_chars += piece;
+
+            if (is_valid_utf8(cached_token_chars.c_str())) {
+                accumulated_output += cached_token_chars;
+
+                // Check custom stop words
+                bool stop_hit = false;
+                for (const auto &stop : stops) {
+                    if (!stop.empty() && accumulated_output.rfind(stop) != std::string::npos) {
+                        stop_hit = true;
+                        break;
+                    }
+                }
+                if (stop_hit) {
+                    LOGD("Custom stop word matched. Stopping generation.");
                     break;
                 }
+
+                // Push delta token to Kotlin Callback
+                if (callback != nullptr && onTokenMethod != nullptr) {
+                    jstring tokenStr = env->NewStringUTF(cached_token_chars.c_str());
+                    jboolean shouldContinue = env->CallBooleanMethod(callback, onTokenMethod, tokenStr, JNI_FALSE);
+                    env->DeleteLocalRef(tokenStr);
+
+                    if (!shouldContinue) {
+                        LOGI("Client requested generation stop via TokenCallback.");
+                        break;
+                    }
+                }
+                cached_token_chars.clear();
             }
-            cached_token_chars.clear();
         }
+
+        const int64_t t_gen_end = ggml_time_us();
+
+        // Final callback invocation with isFinished = true
+        if (callback != nullptr && onTokenMethod != nullptr) {
+            jstring emptyStr = env->NewStringUTF("");
+            env->CallBooleanMethod(callback, onTokenMethod, emptyStr, JNI_TRUE);
+            env->DeleteLocalRef(emptyStr);
+        }
+
+        common_sampler_free(sampler);
+        g_is_generating = false;
+
+        // Calculate speed metrics
+        double prompt_time_sec = (double)(t_prompt_end - t_prompt_start) / 1000000.0;
+        double gen_time_sec = (double)(t_gen_end - t_gen_start) / 1000000.0;
+        double prompt_speed = (prompt_time_sec > 0) ? (n_prompt / prompt_time_sec) : 0.0;
+        double gen_speed = (gen_time_sec > 0) ? (n_generated / gen_time_sec) : 0.0;
+
+        LOGI("Generation Finished: Prompt %d tokens in %.2fs (%.1f t/s) | Gen %d tokens in %.2fs (%.1f t/s)",
+             n_prompt, prompt_time_sec, prompt_speed, n_generated, gen_time_sec, gen_speed);
+
+        std::ostringstream res_json;
+        res_json << std::fixed << std::setprecision(2);
+        res_json << "{"
+                 << "\"prompt_tokens\":" << n_prompt << ","
+                 << "\"completion_tokens\":" << n_generated << ","
+                 << "\"total_tokens\":" << (n_prompt + n_generated) << ","
+                 << "\"prompt_time_sec\":" << prompt_time_sec << ","
+                 << "\"gen_time_sec\":" << gen_time_sec << ","
+                 << "\"prompt_speed_tps\":" << prompt_speed << ","
+                 << "\"gen_speed_tps\":" << gen_speed
+                 << "}";
+
+        return env->NewStringUTF(res_json.str().c_str());
+    } catch (const std::exception &e) {
+        LOGE("Exception during generation: %s", e.what());
+        common_sampler_free(sampler);
+        g_is_generating = false;
+        std::ostringstream err_json;
+        err_json << "{\"error\":\"" << e.what() << "\"}";
+        return env->NewStringUTF(err_json.str().c_str());
     }
-
-    const int64_t t_gen_end = ggml_time_us();
-
-    // Final callback invocation with isFinished = true
-    if (callback != nullptr && onTokenMethod != nullptr) {
-        jstring emptyStr = env->NewStringUTF("");
-        env->CallBooleanMethod(callback, onTokenMethod, emptyStr, JNI_TRUE);
-        env->DeleteLocalRef(emptyStr);
-    }
-
-    common_sampler_free(sampler);
-    g_is_generating = false;
-
-    // Calculate speed metrics
-    double prompt_time_sec = (double)(t_prompt_end - t_prompt_start) / 1000000.0;
-    double gen_time_sec = (double)(t_gen_end - t_gen_start) / 1000000.0;
-    double prompt_speed = (prompt_time_sec > 0) ? (n_prompt / prompt_time_sec) : 0.0;
-    double gen_speed = (gen_time_sec > 0) ? (n_generated / gen_time_sec) : 0.0;
-
-    LOGI("Generation Finished: Prompt %d tokens in %.2fs (%.1f t/s) | Gen %d tokens in %.2fs (%.1f t/s)",
-         n_prompt, prompt_time_sec, prompt_speed, n_generated, gen_time_sec, gen_speed);
-
-    std::ostringstream res_json;
-    res_json << std::fixed << std::setprecision(2);
-    res_json << "{"
-             << "\"prompt_tokens\":" << n_prompt << ","
-             << "\"completion_tokens\":" << n_generated << ","
-             << "\"total_tokens\":" << (n_prompt + n_generated) << ","
-             << "\"prompt_time_sec\":" << prompt_time_sec << ","
-             << "\"gen_time_sec\":" << gen_time_sec << ","
-             << "\"prompt_speed_tps\":" << prompt_speed << ","
-             << "\"gen_speed_tps\":" << gen_speed
-             << "}";
-
-    return env->NewStringUTF(res_json.str().c_str());
 }
 
 } // extern "C"
