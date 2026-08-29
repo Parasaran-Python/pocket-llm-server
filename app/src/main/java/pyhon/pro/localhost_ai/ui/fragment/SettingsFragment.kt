@@ -12,6 +12,7 @@ import pyhon.pro.localhost_ai.R
 import pyhon.pro.localhost_ai.databinding.FragmentSettingsBinding
 import pyhon.pro.localhost_ai.engine.LocalAiEngine
 import pyhon.pro.localhost_ai.util.PreferencesManager
+import java.io.File
 
 class SettingsFragment : Fragment() {
 
@@ -73,7 +74,27 @@ class SettingsFragment : Fragment() {
                 "AUTO" -> PreferencesManager.setGpuLayers(context, 99)
             }
 
-            Toast.makeText(context, "Settings saved! Restart server or reload model to apply changes.", Toast.LENGTH_LONG).show()
+            if (LocalAiEngine.isLoaded.value) {
+                val activePath = LocalAiEngine.activeModelPath.value
+                if (activePath != null && File(activePath).exists()) {
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        Toast.makeText(context, "Applying context size ($ctxLen tokens)...", Toast.LENGTH_SHORT).show()
+                        val result = LocalAiEngine.loadModel(
+                            modelPath = activePath,
+                            nGpuLayers = PreferencesManager.getGpuLayers(context),
+                            nCtx = ctxLen,
+                            nThreads = PreferencesManager.getCpuThreads(context)
+                        )
+                        if (result.isSuccess) {
+                            Toast.makeText(context, "Model reloaded with $ctxLen context size!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Failed to reload: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            } else {
+                Toast.makeText(context, "Settings saved!", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
