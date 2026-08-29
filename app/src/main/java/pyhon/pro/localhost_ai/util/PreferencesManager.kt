@@ -43,7 +43,7 @@ object PreferencesManager {
     }
 
     fun getCpuThreads(context: Context): Int {
-        return getPrefs(context).getInt(KEY_CPU_THREADS, 0)
+        return getPrefs(context).getInt(KEY_CPU_THREADS, 4)
     }
 
     fun setCpuThreads(context: Context, threads: Int) {

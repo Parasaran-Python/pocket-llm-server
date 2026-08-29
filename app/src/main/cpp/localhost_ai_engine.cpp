@@ -227,11 +227,11 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeLoadModel(
         return 1;
     }
 
-    // Hardware thread optimization: if nThreads <= 0, auto-detect
+    // Hardware thread optimization: if nThreads <= 0, use 4 performance cores on 8-core mobile SoC
     int actual_threads = nThreads;
     if (actual_threads <= 0) {
         int procs = (int) sysconf(_SC_NPROCESSORS_ONLN);
-        actual_threads = std::max(2, std::min(6, procs - 2));
+        actual_threads = (procs >= 8) ? 4 : std::max(2, procs - 2);
     }
 
     // Context parameters
