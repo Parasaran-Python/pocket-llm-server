@@ -37,6 +37,7 @@ static llama_batch                      g_batch;
 static common_chat_templates_ptr        g_chat_templates;
 static std::atomic<bool>                g_is_generating(false);
 static std::atomic<bool>                g_cancel_requested(false);
+static std::vector<llama_token>         g_prev_tokens;
 
 static bool is_valid_utf8(const char *string) {
     if (!string) return true;
@@ -274,6 +275,7 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeUnloadModel(
     }
     llama_batch_free(g_batch);
     g_chat_templates.reset();
+    g_prev_tokens.clear();
     if (g_model) {
         llama_model_free(g_model);
         g_model = nullptr;
@@ -408,9 +410,6 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeGenerate(
         }
     }
 
-    // Clear KV cache for clean generation
-    llama_memory_clear(llama_get_memory(g_context), false);
-
     // Tokenize Prompt
     const char *prompt_str = env->GetStringUTFChars(jprompt, nullptr);
     std::string prompt(prompt_str);
@@ -442,6 +441,26 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeGenerate(
         }
     }
 
+    // KV Cache Prefix Reuse (Prompt Caching)
+    size_t n_matching = 0;
+    while (n_matching < g_prev_tokens.size() && n_matching < (size_t) n_prompt &&
+           g_prev_tokens[n_matching] == prompt_tokens[n_matching]) {
+        n_matching++;
+    }
+
+    // Always ensure at least the very last prompt token is decoded to obtain its logits for the sampler
+    if (n_matching == (size_t) n_prompt && n_matching > 0) {
+        n_matching--;
+    }
+
+    if (n_matching > 0) {
+        llama_memory_seq_rm(llama_get_memory(g_context), 0, (llama_pos) n_matching, -1);
+        LOGI("Reusing %zu cached prefix tokens from KV cache! Decoding %zu new prompt tokens.",
+             n_matching, (size_t) n_prompt - n_matching);
+    } else {
+        llama_memory_clear(llama_get_memory(g_context), false);
+    }
+
     // Setup Sampler
     common_params_sampling sparams;
     sparams.temp = temperature;
@@ -450,18 +469,19 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeGenerate(
 
     // Prompt Processing Benchmark
     const int64_t t_prompt_start = ggml_time_us();
+    std::vector<llama_token> generated_tokens;
 
     try {
-        // Decode Prompt in batches
-        llama_pos current_pos = 0;
-        for (int i = 0; i < n_prompt; i += 512) {
+        // Decode Prompt in batches starting from n_matching
+        llama_pos current_pos = (llama_pos) n_matching;
+        for (size_t i = n_matching; i < (size_t) n_prompt; i += 512) {
             if (g_cancel_requested) break;
-            int cur_batch_size = std::min(n_prompt - i, 512);
+            int cur_batch_size = std::min((int)(n_prompt - i), 512);
             common_batch_clear(g_batch);
             for (int j = 0; j < cur_batch_size; j++) {
                 llama_token token = prompt_tokens[i + j];
                 llama_pos pos = current_pos + j;
-                bool want_logit = (i + j == n_prompt - 1);
+                bool want_logit = ((int)(i + j) == n_prompt - 1);
                 common_batch_add(g_batch, token, pos, {0}, want_logit);
             }
             if (llama_decode(g_context, g_batch) != 0) {
@@ -497,6 +517,8 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeGenerate(
                 LOGD("EOS token reached: %d", new_token_id);
                 break;
             }
+
+            generated_tokens.push_back(new_token_id);
 
             // Decode new token into KV cache
             common_batch_clear(g_batch);
@@ -555,6 +577,10 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeGenerate(
 
         common_sampler_free(sampler);
         g_is_generating = false;
+
+        // Cache tokens for next turn prefix reuse
+        g_prev_tokens = prompt_tokens;
+        g_prev_tokens.insert(g_prev_tokens.end(), generated_tokens.begin(), generated_tokens.end());
 
         // Calculate speed metrics
         double prompt_time_sec = (double)(t_prompt_end - t_prompt_start) / 1000000.0;
