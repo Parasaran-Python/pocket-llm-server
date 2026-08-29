@@ -49,10 +49,12 @@ class MainActivity : AppCompatActivity() {
             val systemBars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
+            val bottomPaddingPx = (10 * resources.displayMetrics.density).toInt()
             binding.topToolbar.updatePadding(
                 left = systemBars.left,
                 top = systemBars.top,
-                right = systemBars.right
+                right = systemBars.right,
+                bottom = bottomPaddingPx
             )
             binding.bottomNav.updatePadding(
                 left = systemBars.left,

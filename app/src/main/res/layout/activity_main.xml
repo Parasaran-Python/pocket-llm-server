@@ -13,6 +13,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="?attr/actionBarSize"
+        android:paddingBottom="10dp"
         android:background="@color/bg_surface"
         android:elevation="4dp"
         app:layout_constraintTop_toTopOf="parent"
