@@ -1,21 +1,31 @@
-name: Build Android APKs
+name: "CodeQL Analysis"
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build Debug & Release APKs
+  analyze:
+    name: Analyze Code Quality & Security
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'java-kotlin' ]
 
     steps:
       - name: Checkout repository and submodules
@@ -39,24 +49,19 @@ jobs:
           yes | sdkmanager --licenses || true
           sdkmanager --install "ndk;28.2.13676358" "cmake;3.22.1"
 
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: manual
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build APKs with Gradle
-        run: ./gradlew assembleDebug assembleRelease --stacktrace
+      - name: Build Java & Kotlin Code with Gradle
+        run: ./gradlew compileDebugSources --stacktrace
 
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
         with:
-          name: pocket-llm-server-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload Release APK (Unsigned)
-        uses: actions/upload-artifact@v4
-        with:
-          name: pocket-llm-server-release-unsigned-apk
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
-          if-no-files-found: error
-          retention-days: 30
+          category: "/language:${{matrix.language}}"
