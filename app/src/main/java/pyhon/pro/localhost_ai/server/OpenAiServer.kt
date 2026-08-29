@@ -249,9 +249,14 @@ class OpenAiServer(
                 )
                 writeSseChunk(pipedOut, gson.toJson(firstChunk))
 
-                // Stream generation tokens
-                val callback = object : TokenCallback {
-                    override fun onToken(token: String, isFinished: Boolean): Boolean {
+                // Stream generation tokens in real-time
+                val resultJson = LocalAiEngine.generateComplete(
+                    prompt = prompt,
+                    maxTokens = request.effectiveMaxTokens,
+                    temperature = request.temperature,
+                    topP = request.topP,
+                    stopWords = request.getStopSequences(),
+                    onTokenDelta = { token ->
                         if (token.isNotEmpty()) {
                             tokenCount++
                             val chunk = ChatCompletionChunk(
@@ -265,18 +270,9 @@ class OpenAiServer(
                                     )
                                 )
                             )
-                            return writeSseChunk(pipedOut, gson.toJson(chunk))
+                            writeSseChunk(pipedOut, gson.toJson(chunk))
                         }
-                        return true
                     }
-                }
-
-                val resultJson = LocalAiEngine.generateComplete(
-                    prompt = prompt,
-                    maxTokens = request.effectiveMaxTokens,
-                    temperature = request.temperature,
-                    topP = request.topP,
-                    stopWords = request.getStopSequences()
                 ).second
 
                 // Send final completion chunk
