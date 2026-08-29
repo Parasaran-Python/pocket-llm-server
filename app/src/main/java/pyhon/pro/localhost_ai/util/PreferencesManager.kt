@@ -35,7 +35,7 @@ object PreferencesManager {
     }
 
     fun getContextLength(context: Context): Int {
-        return getPrefs(context).getInt(KEY_CONTEXT_LENGTH, 4096)
+        return getPrefs(context).getInt(KEY_CONTEXT_LENGTH, 8192)
     }
 
     fun setContextLength(context: Context, length: Int) {

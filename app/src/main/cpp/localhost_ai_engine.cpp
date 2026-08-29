@@ -236,7 +236,7 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeLoadModel(
     // Context parameters
     llama_context_params ctx_params = llama_context_default_params();
     int trained_ctx = llama_model_n_ctx_train(model);
-    int actual_ctx = (nCtx > 0) ? std::min(nCtx, trained_ctx) : std::min(4096, trained_ctx);
+    int actual_ctx = (nCtx > 0) ? std::min(nCtx, trained_ctx) : std::min(8192, trained_ctx);
 
     ctx_params.n_ctx = actual_ctx;
     ctx_params.n_batch = 512;
@@ -422,10 +422,24 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeGenerate(
          n_prompt, maxTokens, temperature);
 
     int ctx_size = llama_n_ctx(g_context);
-    if (n_prompt >= ctx_size - 4) {
-        LOGE("Prompt tokens (%d) exceed context size (%d)", n_prompt, ctx_size);
-        g_is_generating = false;
-        return env->NewStringUTF("{\"error\":\"Prompt exceeds model context size\"}");
+    int max_allowed_prompt = ctx_size - std::min(maxTokens, 512) - 16;
+    if (max_allowed_prompt < 256) {
+        max_allowed_prompt = ctx_size - 64;
+    }
+    if (n_prompt > max_allowed_prompt) {
+        LOGW("Prompt tokens (%d) exceed allowed limit (%d). Applying sliding-window context truncation.",
+             n_prompt, max_allowed_prompt);
+        // Keep the first 32 tokens (BOS / System Header) and the most recent tokens
+        int keep_start = std::min(32, n_prompt);
+        int keep_end = max_allowed_prompt - keep_start;
+        if (keep_end > 0) {
+            std::vector<llama_token> truncated_tokens;
+            truncated_tokens.reserve(max_allowed_prompt);
+            truncated_tokens.insert(truncated_tokens.end(), prompt_tokens.begin(), prompt_tokens.begin() + keep_start);
+            truncated_tokens.insert(truncated_tokens.end(), prompt_tokens.end() - keep_end, prompt_tokens.end());
+            prompt_tokens = std::move(truncated_tokens);
+            n_prompt = (int) prompt_tokens.size();
+        }
     }
 
     // Setup Sampler
