@@ -297,6 +297,9 @@ object LocalAiEngine {
         stopWords: List<String> = emptyList(),
         onTokenDelta: ((String) -> Unit)? = null
     ): Pair<String, GenerationResult> = withContext(Dispatchers.IO) {
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
+        } catch (ignored: Exception) {}
         _isGenerating.value = true
         val fullText = StringBuilder()
 

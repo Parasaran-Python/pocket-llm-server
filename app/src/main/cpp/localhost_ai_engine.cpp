@@ -8,6 +8,7 @@
 #include <mutex>
 #include <atomic>
 #include <unistd.h>
+#include <sys/resource.h>
 
 #include "chat.h"
 #include "common.h"
@@ -386,6 +387,7 @@ Java_pyhon_pro_localhost_1ai_engine_LocalAiEngine_nativeGenerate(
         return env->NewStringUTF("{\"error\":\"Model is not loaded\"}");
     }
 
+    setpriority(PRIO_PROCESS, 0, -20);
     g_is_generating = true;
     g_cancel_requested = false;
 
